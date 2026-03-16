@@ -4,6 +4,7 @@ from fastapi import FastAPI, Request
 from telegram import Bot, Update
 from config_manager import get_client_config
 from claude_client import get_claude_response
+from briefing import build_briefing
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -33,7 +34,22 @@ async def webhook(token: str, request: Request):
 
         logger.info(f"[{token[:10]}...] Message de {user_name}: {user_message[:50]}")
 
-        # Charge la config du client (avec cache 30 min)
+        # ── COMMANDE /journee — 0% Claude ──────────────────
+        if user_message.strip().lower() in ["/journee", "/journée"]:
+            await bot.send_chat_action(chat_id=chat_id, action="typing")
+            try:
+                briefing = build_briefing()
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=briefing,
+                    parse_mode="Markdown"
+                )
+            except Exception as e:
+                logger.error(f"Erreur briefing: {e}")
+                await bot.send_message(chat_id=chat_id, text="Erreur lors de la génération du briefing.")
+            return {"ok": True}
+
+        # ── Charge la config du client (avec cache 30 min) ──
         client_config = get_client_config(token)
         if not client_config:
             await bot.send_message(chat_id=chat_id, text="Ce bot n'est pas configuré.")
