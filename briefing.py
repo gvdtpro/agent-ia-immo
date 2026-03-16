@@ -24,10 +24,10 @@ def build_briefing() -> str:
     if rdv:
         for p in rdv:
             heure = nc.prop(p, 'Heure RDV')
-            bien = nc.prop(p, 'Bien à visiter')
-            heure_str = f"*{heure}*" if heure != "—" else "heure ?"
-            bien_str = f" — {bien}" if bien != "—" else ""
-            lignes.append(f"• {heure_str} › {nc.prop(p, 'Acheteur')}{bien_str} _(budget {nc.prop(p, 'Budget')})_")
+            type_rdv = nc.prop(p, 'Type RDV')
+            heure_str = heure if heure != "—" else "?"
+            type_str = f" {type_rdv}" if type_rdv != "—" else ""
+            lignes.append(f"• *{heure_str}* —{type_str} · {nc.prop(p, 'Acheteur')}")
     else:
         lignes.append("• Aucun RDV confirmé pour aujourd'hui")
     lignes.append("")
