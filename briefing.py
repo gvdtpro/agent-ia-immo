@@ -1,5 +1,5 @@
 from datetime import datetime
-import crm_sheets as crm
+import crm_notion as nc
 
 JOURS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"]
 MOIS  = ["janvier", "février", "mars", "avril", "mai", "juin",
@@ -11,19 +11,19 @@ def build_briefing() -> str:
     jour = JOURS[now.weekday()]
     date = f"{now.day} {MOIS[now.month - 1]} {now.year}"
 
-    rdv       = crm.get_rdv_du_jour()
-    a_valider = crm.get_a_valider()
-    relances  = crm.get_relances_du_jour()
-    chauds    = crm.get_leads_chauds()
-    nouveaux  = crm.get_nouveaux_leads()
+    rdv       = nc.get_rdv_du_jour()
+    a_valider = nc.get_a_valider()
+    relances  = nc.get_relances_du_jour()
+    chauds    = nc.get_leads_chauds()
+    nouveaux  = nc.get_nouveaux_leads()
 
     lignes = [f"📋 *BRIEFING DU {jour.upper()} {date.upper()}*", ""]
 
     # ── PLANNING DU JOUR ──────────────────────────
     lignes.append("🗓 *PLANNING DU JOUR*")
     if rdv:
-        for r in rdv:
-            lignes.append(f"• {r.get('Nom','')} {r.get('Prénom','')} — {r.get('Secteur souhaité','')} _(budget {r.get('Budget max (€)','?')}€)_")
+        for p in rdv:
+            lignes.append(f"• {nc.prop(p, 'Acheteur')} — {nc.prop(p, 'Critères')} _(budget {nc.prop(p, 'Budget')})_")
     else:
         lignes.append("• Aucun RDV confirmé pour aujourd'hui")
     lignes.append("")
@@ -31,8 +31,8 @@ def build_briefing() -> str:
     # ── RÉPONSES À VALIDER ────────────────────────
     lignes.append("⚠️ *RÉPONSES À VALIDER*")
     if a_valider:
-        for r in a_valider:
-            lignes.append(f"• {r.get('Nom','')} {r.get('Prénom','')} — {r.get('Dernier contact','—')}")
+        for p in a_valider:
+            lignes.append(f"• {nc.prop(p, 'Acheteur')} — reçu {nc.prop(p, 'Dernier échange')}")
     else:
         lignes.append("• Aucune réponse en attente ✅")
     lignes.append("")
@@ -40,8 +40,8 @@ def build_briefing() -> str:
     # ── RELANCES DU JOUR ──────────────────────────
     lignes.append("🔄 *RELANCES DU JOUR*")
     if relances:
-        for r in relances:
-            lignes.append(f"• {r.get('Nom','')} {r.get('Prénom','')} — {r.get('Type de bien','')} {r.get('Secteur souhaité','')} _(dernier contact : {r.get('Dernier contact','—')})_")
+        for p in relances:
+            lignes.append(f"• {nc.prop(p, 'Acheteur')} — {nc.prop(p, 'Critères')} _(dernier contact : {nc.prop(p, 'Dernier échange')})_")
     else:
         lignes.append("• Aucune relance prévue aujourd'hui")
     lignes.append("")
@@ -49,16 +49,16 @@ def build_briefing() -> str:
     # ── LEADS CHAUDS ──────────────────────────────
     if chauds:
         lignes.append("🔴 *LEADS CHAUDS — PRIORITÉ*")
-        for r in chauds:
-            lignes.append(f"• {r.get('Nom','')} {r.get('Prénom','')} — budget {r.get('Budget max (€)','?')}€")
+        for p in chauds:
+            lignes.append(f"• {nc.prop(p, 'Acheteur')} — budget {nc.prop(p, 'Budget')}")
         lignes.append("")
 
     # ── NOUVEAUX LEADS ────────────────────────────
     lignes.append("🆕 *NOUVEAUX LEADS*")
     if nouveaux:
         lignes.append(f"• *{len(nouveaux)} nouvelle(s) demande(s)*")
-        for r in nouveaux:
-            lignes.append(f"  — {r.get('Nom','')} {r.get('Prénom','')} : {r.get('Type de bien','')} {r.get('Secteur souhaité','')}")
+        for p in nouveaux:
+            lignes.append(f"  — {nc.prop(p, 'Acheteur')} : {nc.prop(p, 'Critères')}")
     else:
         lignes.append("• Aucun nouveau lead")
 
