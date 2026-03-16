@@ -1,5 +1,5 @@
 from datetime import datetime
-import crm_notion as nc
+import crm_sheets as crm
 
 JOURS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"]
 MOIS  = ["janvier", "février", "mars", "avril", "mai", "juin",
@@ -7,33 +7,23 @@ MOIS  = ["janvier", "février", "mars", "avril", "mai", "juin",
 
 
 def build_briefing() -> str:
-    """
-    Génère le briefing quotidien sans appel Claude.
-    Retourne une chaîne formatée pour Telegram (Markdown).
-    """
-    now = datetime.now()
+    now  = datetime.now()
     jour = JOURS[now.weekday()]
     date = f"{now.day} {MOIS[now.month - 1]} {now.year}"
 
-    rdv        = nc.get_rdv_du_jour()
-    a_valider  = nc.get_a_valider()
-    relances   = nc.get_relances_du_jour()
-    nouveaux   = nc.get_nouveaux_leads(heures=24)
-    chauds     = nc.get_leads_chauds()
+    rdv       = crm.get_rdv_du_jour()
+    a_valider = crm.get_a_valider()
+    relances  = crm.get_relances_du_jour()
+    chauds    = crm.get_leads_chauds()
+    nouveaux  = crm.get_nouveaux_leads()
 
-    lignes = [
-        f"📋 *BRIEFING DU {jour.upper()} {date.upper()}*",
-        ""
-    ]
+    lignes = [f"📋 *BRIEFING DU {jour.upper()} {date.upper()}*", ""]
 
     # ── PLANNING DU JOUR ──────────────────────────
     lignes.append("🗓 *PLANNING DU JOUR*")
     if rdv:
-        for p in rdv:
-            nom     = nc.prop(p, "Acheteur")
-            budget  = nc.prop(p, "Budget")
-            critere = nc.prop(p, "Critères")
-            lignes.append(f"• {nom} — {critere} _(budget {budget})_")
+        for r in rdv:
+            lignes.append(f"• {r.get('Nom','')} {r.get('Prénom','')} — {r.get('Secteur souhaité','')} _(budget {r.get('Budget max (€)','?')}€)_")
     else:
         lignes.append("• Aucun RDV confirmé pour aujourd'hui")
     lignes.append("")
@@ -41,10 +31,8 @@ def build_briefing() -> str:
     # ── RÉPONSES À VALIDER ────────────────────────
     lignes.append("⚠️ *RÉPONSES À VALIDER*")
     if a_valider:
-        for p in a_valider:
-            nom     = nc.prop(p, "Acheteur")
-            dernier = nc.prop(p, "Dernier échange")
-            lignes.append(f"• {nom} — reçu {dernier}")
+        for r in a_valider:
+            lignes.append(f"• {r.get('Nom','')} {r.get('Prénom','')} — {r.get('Dernier contact','—')}")
     else:
         lignes.append("• Aucune réponse en attente ✅")
     lignes.append("")
@@ -52,34 +40,27 @@ def build_briefing() -> str:
     # ── RELANCES DU JOUR ──────────────────────────
     lignes.append("🔄 *RELANCES DU JOUR*")
     if relances:
-        for p in relances:
-            nom     = nc.prop(p, "Acheteur")
-            dernier = nc.prop(p, "Dernier échange")
-            critere = nc.prop(p, "Critères")
-            lignes.append(f"• {nom} — {critere} _(dernier contact : {dernier})_")
+        for r in relances:
+            lignes.append(f"• {r.get('Nom','')} {r.get('Prénom','')} — {r.get('Type de bien','')} {r.get('Secteur souhaité','')} _(dernier contact : {r.get('Dernier contact','—')})_")
     else:
         lignes.append("• Aucune relance prévue aujourd'hui")
     lignes.append("")
 
     # ── LEADS CHAUDS ──────────────────────────────
     if chauds:
-        lignes.append("🔴 *LEADS CHAUDS — À TRAITER EN PRIORITÉ*")
-        for p in chauds:
-            nom    = nc.prop(p, "Acheteur")
-            budget = nc.prop(p, "Budget")
-            lignes.append(f"• {nom} — budget {budget}")
+        lignes.append("🔴 *LEADS CHAUDS — PRIORITÉ*")
+        for r in chauds:
+            lignes.append(f"• {r.get('Nom','')} {r.get('Prénom','')} — budget {r.get('Budget max (€)','?')}€")
         lignes.append("")
 
     # ── NOUVEAUX LEADS ────────────────────────────
-    lignes.append("🆕 *NOUVEAUX LEADS (24H)*")
+    lignes.append("🆕 *NOUVEAUX LEADS*")
     if nouveaux:
-        lignes.append(f"• *{len(nouveaux)} nouvelle(s) demande(s)* reçue(s)")
-        for p in nouveaux:
-            nom     = nc.prop(p, "Acheteur")
-            critere = nc.prop(p, "Critères")
-            lignes.append(f"  — {nom} : {critere}")
+        lignes.append(f"• *{len(nouveaux)} nouvelle(s) demande(s)*")
+        for r in nouveaux:
+            lignes.append(f"  — {r.get('Nom','')} {r.get('Prénom','')} : {r.get('Type de bien','')} {r.get('Secteur souhaité','')}")
     else:
-        lignes.append("• Aucun nouveau lead depuis hier")
+        lignes.append("• Aucun nouveau lead")
 
     lignes.append("")
     lignes.append("_Généré automatiquement — Agent IA Immo_ 🤖")
