@@ -1,7 +1,7 @@
 from clients.base import ClientConfig, Property
 
 config = ClientConfig(
-    token_env_var="TELEGRAM_TOKEN_DEMO",
+    token_env_var="TELEGRAM_TOKEN_AGENTIAGAEL",
     agency_name="Martin Immobilier",
     agent_name="Sophie Martin",
     city="Lyon",
