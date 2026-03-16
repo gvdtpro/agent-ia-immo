@@ -47,4 +47,4 @@ async def get_claude_response(
 
     except Exception as e:
         logger.error(f"Erreur Claude API: {e}")
-        return "Une erreur est survenue. Veuillez réessayer dans quelques instants."
+        return "Tape / pour voir les commandes disponibles."
