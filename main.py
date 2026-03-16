@@ -102,6 +102,13 @@ async def webhook(token: str, request: Request):
 
     except Exception as e:
         logger.error(f"Erreur webhook: {e}")
+        try:
+            await bot.send_message(
+                chat_id=chat_id,
+                text="Tape / pour voir les commandes disponibles."
+            )
+        except Exception:
+            pass
 
     return {"ok": True}
 
