@@ -67,6 +67,6 @@ def build_briefing() -> str:
         lignes.append("• Aucun nouveau lead")
 
     lignes.append("")
-    lignes.append("_Généré automatiquement — Agent IA Immo_ 🤖")
+    lignes.append("_Agent IA Immo_ 🤖")
 
     return "\n".join(lignes)
