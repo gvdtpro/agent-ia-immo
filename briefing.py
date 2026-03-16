@@ -23,7 +23,9 @@ def build_briefing() -> str:
     lignes.append("🗓 *PLANNING DU JOUR*")
     if rdv:
         for p in rdv:
-            lignes.append(f"• {nc.prop(p, 'Acheteur')} — {nc.prop(p, 'Critères')} _(budget {nc.prop(p, 'Budget')})_")
+            heure = nc.prop(p, 'Heure RDV')
+            heure_str = f" à *{heure}*" if heure != "—" else ""
+            lignes.append(f"• {nc.prop(p, 'Acheteur')}{heure_str} — {nc.prop(p, 'Critères')} _(budget {nc.prop(p, 'Budget')})_")
     else:
         lignes.append("• Aucun RDV confirmé pour aujourd'hui")
     lignes.append("")
