@@ -1,5 +1,5 @@
 from datetime import datetime
-import notion_client as nc
+import crm_notion as nc
 
 JOURS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"]
 MOIS  = ["janvier", "février", "mars", "avril", "mai", "juin",
