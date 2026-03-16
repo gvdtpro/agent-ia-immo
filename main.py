@@ -5,6 +5,7 @@ from telegram import Bot, Update
 from config_manager import get_client_config
 from claude_client import get_claude_response
 from briefing import build_briefing
+from debrief import start_debrief, is_active, handle_callback, handle_text as debrief_handle_text
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -25,6 +26,17 @@ async def webhook(token: str, request: Request):
         bot = Bot(token=token)
         update = Update.de_json(data, bot)
 
+        # ── CALLBACK QUERY (boutons inline) ────────────────
+        if update.callback_query:
+            query = update.callback_query
+            await query.answer()
+            chat_id = query.message.chat_id
+            msg, keyboard, done = handle_callback(chat_id, query.data)
+            if msg:
+                await bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown",
+                                       reply_markup=keyboard)
+            return {"ok": True}
+
         if not update.message or not update.message.text:
             return {"ok": True}
 
@@ -33,6 +45,26 @@ async def webhook(token: str, request: Request):
         user_name = update.message.from_user.first_name or "le prospect"
 
         logger.info(f"[{token[:10]}...] Message de {user_name}: {user_message[:50]}")
+
+        # ── COMMANDE /debrief ───────────────────────────────
+        if user_message.strip().lower() == "/debrief":
+            await bot.send_chat_action(chat_id=chat_id, action="typing")
+            try:
+                msg, keyboard = start_debrief(chat_id)
+                await bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown",
+                                       reply_markup=keyboard)
+            except Exception as e:
+                logger.error(f"Erreur debrief: {e}")
+                await bot.send_message(chat_id=chat_id, text="Erreur lors du démarrage du debrief.")
+            return {"ok": True}
+
+        # ── SESSION DEBRIEF EN COURS ─────────────────────────
+        if is_active(chat_id):
+            msg, keyboard, done = debrief_handle_text(chat_id, user_message)
+            if msg is not None:
+                await bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown",
+                                       reply_markup=keyboard)
+                return {"ok": True}
 
         # ── COMMANDE /journee — 0% Claude ──────────────────
         if user_message.strip().lower() in ["/journee", "/journée"]:

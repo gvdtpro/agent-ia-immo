@@ -71,6 +71,30 @@ def get_leads_chauds() -> list:
     })
 
 
+def update_acheteur(page_id: str, statut: str = None, notes: str = None, prochain_rdv: str = None):
+    """Met à jour le statut, les notes et/ou la date du prochain RDV d'un acheteur."""
+    props = {}
+    if statut:
+        props["Statut"] = {"select": {"name": statut}}
+    if notes:
+        props["Notes"] = {"rich_text": [{"text": {"content": notes}}]}
+    if prochain_rdv:
+        # Essaie de parser DD/MM → YYYY-MM-DD, sinon stocke en notes
+        import re
+        m = re.match(r'^(\d{1,2})/(\d{1,2})$', prochain_rdv.strip())
+        if m:
+            date_iso = f"2026-{int(m.group(2)):02d}-{int(m.group(1)):02d}"
+            props["Date RDV"] = {"date": {"start": date_iso}}
+        else:
+            # texte libre → on l'ajoute aux notes
+            existing = props.get("Notes", {}).get("rich_text", [{"text": {"content": ""}}])
+            existing_text = existing[0]["text"]["content"]
+            suffix = f"\nProchain RDV : {prochain_rdv}"
+            props["Notes"] = {"rich_text": [{"text": {"content": existing_text + suffix}}]}
+    if props:
+        get_notion().pages.update(page_id=page_id, properties=props)
+
+
 def prop(page: dict, name: str) -> str:
     """Extrait la valeur d'une propriété Notion de façon sécurisée."""
     try:
