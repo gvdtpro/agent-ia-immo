@@ -28,10 +28,13 @@ def query_acheteurs(filtre: dict = None) -> list:
 
 
 def get_rdv_du_jour() -> list:
-    """Acheteurs avec statut RDV confirmé."""
+    """Acheteurs avec un RDV aujourd'hui."""
+    today = datetime.now().strftime("%Y-%m-%d")
     return query_acheteurs({
-        "property": "Statut",
-        "select": {"equals": "RDV confirmé"}
+        "and": [
+            {"property": "Statut", "select": {"equals": "RDV confirmé"}},
+            {"property": "Date RDV", "date": {"equals": today}}
+        ]
     })
 
 
@@ -52,11 +55,11 @@ def get_relances_du_jour() -> list:
 
 
 def get_nouveaux_leads(heures: int = 24) -> list:
-    """Prospects créés dans les dernières X heures."""
-    depuis = (datetime.now(timezone.utc) - timedelta(hours=heures)).isoformat()
+    """Prospects dont la Date premier contact est dans les dernières X heures."""
+    depuis = (datetime.now(timezone.utc) - timedelta(hours=heures)).strftime("%Y-%m-%d")
     return query_acheteurs({
-        "timestamp": "created_time",
-        "created_time": {"on_or_after": depuis}
+        "property": "Date premier contact",
+        "date": {"on_or_after": depuis}
     })
 
 
