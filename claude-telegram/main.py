@@ -1,12 +1,26 @@
 import subprocess
 import os
 import asyncio
+import logging
 from fastapi import FastAPI, Request
 import httpx
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN_AGENTIAGAEL"]
+
+# Écrire les credentials Claude.ai au démarrage
+creds = os.environ.get("CLAUDE_CREDENTIALS", "")
+if creds:
+    os.makedirs("/root/.claude", exist_ok=True)
+    with open("/root/.claude/.credentials.json", "w") as f:
+        f.write(creds)
+    logger.info("Claude credentials written OK (%d bytes)", len(creds))
+else:
+    logger.warning("CLAUDE_CREDENTIALS env var is empty!")
 TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 
 # Historique par chat_id (en mémoire, reset au redémarrage)
@@ -41,6 +55,7 @@ def run_claude(prompt: str, chat_id: int) -> str:
         timeout=120,
         env={**os.environ}
     )
+    logger.info("claude returncode=%d stdout=%r stderr=%r", result.returncode, result.stdout[:200], result.stderr[:200])
     return result.stdout.strip() or result.stderr.strip() or "Pas de réponse."
 
 
