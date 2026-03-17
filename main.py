@@ -98,7 +98,7 @@ async def webhook(token: str, request: Request):
                     await bot.send_message(chat_id=chat_id, text="Aucun vendeur avec Prospection IG cochée dans le CRM.")
                     return {"ok": True}
                 envoyes, erreurs = [], []
-                async with httpx.AsyncClient(timeout=10) as client:
+                async with httpx.AsyncClient(timeout=60) as client:
                     for v in vendeurs:
                         nom = prop(v, "Vendeur")
                         pseudo = prop(v, "Instagram")
