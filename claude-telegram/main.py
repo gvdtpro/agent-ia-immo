@@ -17,8 +17,8 @@ TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 # Écrire les credentials Claude.ai au démarrage
 creds_raw = os.environ.get("CLAUDE_CREDENTIALS", "{}")
 try:
-    os.makedirs("/root/.claude", exist_ok=True)
-    with open("/root/.claude/.credentials.json", "w") as f:
+    os.makedirs("/home/appuser/.claude", exist_ok=True)
+    with open("/home/appuser/.claude/.credentials.json", "w") as f:
         f.write(creds_raw)
     logger.info("Credentials written OK (%d bytes)", len(creds_raw))
 except Exception as e:
@@ -46,7 +46,7 @@ try:
             }
         }
     }
-    with open("/root/.claude.json", "w") as f:
+    with open("/home/appuser/.claude.json", "w") as f:
         json.dump(claude_config, f)
     logger.info("Claude MCP config written OK")
 except Exception as e:
@@ -98,12 +98,12 @@ def run_claude(prompt: str, chat_id: int) -> str:
             "claude", "-p", full_prompt,
             "--output-format", "text",
             "--dangerously-skip-permissions",
-            "--mcp-config", "/root/.claude.json",
+            "--mcp-config", "/home/appuser/.claude.json",
         ],
         capture_output=True,
         text=True,
         timeout=120,
-        env={**os.environ, "HOME": "/root"}
+        env={**os.environ, "HOME": "/home/appuser"}
     )
     logger.info("claude rc=%d stdout=%r stderr=%r", result.returncode, result.stdout[:300], result.stderr[:300])
     return result.stdout.strip() or result.stderr.strip() or "Pas de réponse."
