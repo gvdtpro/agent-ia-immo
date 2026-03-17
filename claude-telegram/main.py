@@ -1,5 +1,5 @@
-import subprocess
 import os
+import json
 import asyncio
 import logging
 from fastapi import FastAPI, Request
@@ -11,52 +11,53 @@ logger = logging.getLogger(__name__)
 app = FastAPI()
 
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN_AGENTIAGAEL"]
-
-# Écrire les credentials Claude.ai au démarrage
-creds = os.environ.get("CLAUDE_CREDENTIALS", "")
-if creds:
-    os.makedirs("/root/.claude", exist_ok=True)
-    with open("/root/.claude/.credentials.json", "w") as f:
-        f.write(creds)
-    logger.info("Claude credentials written OK (%d bytes)", len(creds))
-else:
-    logger.warning("CLAUDE_CREDENTIALS env var is empty!")
 TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 
-# Historique par chat_id (en mémoire, reset au redémarrage)
+# Extraire le token OAuth depuis CLAUDE_CREDENTIALS
+creds_raw = os.environ.get("CLAUDE_CREDENTIALS", "{}")
+creds = json.loads(creds_raw)
+OAUTH_TOKEN = creds.get("claudeAiOauth", {}).get("accessToken", "")
+if OAUTH_TOKEN:
+    logger.info("OAuth token loaded OK")
+else:
+    logger.warning("OAuth token not found in CLAUDE_CREDENTIALS")
+
+# Historique par chat_id
 conversations: dict[int, list[dict]] = {}
+
+
+async def call_claude(prompt: str, history: list[dict]) -> str:
+    messages = history[-20:] + [{"role": "user", "content": prompt}]
+    async with httpx.AsyncClient(timeout=120) as client:
+        r = await client.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "Authorization": f"Bearer {OAUTH_TOKEN}",
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={
+                "model": "claude-sonnet-4-6",
+                "max_tokens": 4096,
+                "messages": messages,
+            }
+        )
+        data = r.json()
+        logger.info("API response status=%d", r.status_code)
+        if r.status_code == 200:
+            return data["content"][0]["text"]
+        else:
+            logger.error("API error: %s", data)
+            return f"Erreur API: {data.get('error', {}).get('message', str(data))}"
 
 
 async def send_message(chat_id: int, text: str):
     async with httpx.AsyncClient() as client:
-        # Telegram limite à 4096 chars par message
         for i in range(0, len(text), 4096):
             await client.post(f"{TELEGRAM_API}/sendMessage", json={
                 "chat_id": chat_id,
                 "text": text[i:i+4096],
-                "parse_mode": "Markdown"
             })
-
-
-def run_claude(prompt: str, chat_id: int) -> str:
-    # Construire l'historique comme contexte
-    history = conversations.get(chat_id, [])
-    context = ""
-    for msg in history[-10:]:  # 10 derniers messages max
-        role = "Utilisateur" if msg["role"] == "user" else "Assistant"
-        context += f"{role}: {msg['content']}\n"
-
-    full_prompt = f"{context}Utilisateur: {prompt}\nAssistant:" if context else prompt
-
-    result = subprocess.run(
-        ["claude", "-p", full_prompt, "--output-format", "text"],
-        capture_output=True,
-        text=True,
-        timeout=120,
-        env={**os.environ}
-    )
-    logger.info("claude returncode=%d stdout=%r stderr=%r", result.returncode, result.stdout[:200], result.stderr[:200])
-    return result.stdout.strip() or result.stderr.strip() or "Pas de réponse."
 
 
 @app.post("/webhook")
@@ -69,19 +70,15 @@ async def webhook(request: Request):
     if not text or not chat_id:
         return {"ok": True}
 
-    # Commande /reset
     if text == "/reset":
         conversations.pop(chat_id, None)
         await send_message(chat_id, "Conversation réinitialisée.")
         return {"ok": True}
 
-    # Appel Claude Code
-    loop = asyncio.get_event_loop()
-    response = await loop.run_in_executor(None, run_claude, text, chat_id)
+    history = conversations.get(chat_id, [])
+    response = await call_claude(text, history)
 
-    # Sauvegarder dans l'historique
-    if chat_id not in conversations:
-        conversations[chat_id] = []
+    conversations.setdefault(chat_id, [])
     conversations[chat_id].append({"role": "user", "content": text})
     conversations[chat_id].append({"role": "assistant", "content": response})
 
@@ -93,10 +90,7 @@ async def webhook(request: Request):
 async def setup():
     domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "")
     async with httpx.AsyncClient() as client:
-        r = await client.get(
-            f"{TELEGRAM_API}/setWebhook",
-            params={"url": f"https://{domain}/webhook"}
-        )
+        r = await client.get(f"{TELEGRAM_API}/setWebhook", params={"url": f"https://{domain}/webhook"})
         return r.json()
 
 
