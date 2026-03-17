@@ -2,7 +2,6 @@ import os
 import json
 import asyncio
 import logging
-import subprocess
 from fastapi import FastAPI, Request
 import httpx
 
@@ -13,27 +12,27 @@ app = FastAPI()
 
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN_AGENTIAGAEL"]
 TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
+HOME = "/home/appuser"
+MCP_CONFIG_PATH = f"{HOME}/.claude.json"
 
 # Écrire les credentials Claude.ai au démarrage
 creds_raw = os.environ.get("CLAUDE_CREDENTIALS", "{}")
 try:
-    os.makedirs("/home/appuser/.claude", exist_ok=True)
-    with open("/home/appuser/.claude/.credentials.json", "w") as f:
+    os.makedirs(f"{HOME}/.claude", exist_ok=True)
+    with open(f"{HOME}/.claude/.credentials.json", "w") as f:
         f.write(creds_raw)
     logger.info("Credentials written OK (%d bytes)", len(creds_raw))
 except Exception as e:
     logger.error("Failed to write credentials: %s", e)
 
-# Écrire la config MCP Claude Code (~/.claude.json)
+# Écrire la config MCP Claude Code
 try:
     claude_config = {
         "mcpServers": {
             "notion": {
                 "command": "notion-mcp-server",
                 "args": [],
-                "env": {
-                    "NOTION_API_KEY": os.environ.get("NOTION_TOKEN", "")
-                }
+                "env": {"NOTION_API_KEY": os.environ.get("NOTION_TOKEN", "")}
             },
             "gmail": {
                 "command": "python3",
@@ -46,7 +45,7 @@ try:
             }
         }
     }
-    with open("/home/appuser/.claude.json", "w") as f:
+    with open(MCP_CONFIG_PATH, "w") as f:
         json.dump(claude_config, f)
     logger.info("Claude MCP config written OK")
 except Exception as e:
@@ -54,7 +53,6 @@ except Exception as e:
 
 # Historique par chat_id
 conversations: dict[int, list[dict]] = {}
-
 
 SYSTEM_PROMPT = """Tu es Alex, l'assistant IA personnel de [NOM AGENT], agent immobilier.
 
@@ -84,29 +82,56 @@ TES LIMITES STRICTES :
 
 Tu parles toujours en français, avec un ton professionnel mais chaleureux."""
 
+# Mots-clés qui déclenchent le chargement des MCPs
+NOTION_KEYWORDS = {"client", "contact", "crm", "rendez-vous", "rdv", "agenda", "acheteur",
+                   "vendeur", "bien", "propriété", "note", "statut", "cherche", "budget",
+                   "relance", "suivi", "historique", "dossier", "prospect"}
+GMAIL_KEYWORDS  = {"mail", "email", "message", "envoyer", "envoie", "brouillon",
+                   "inbox", "réception", "reçu", "envoyé"}
 
-def run_claude(prompt: str, chat_id: int) -> str:
+def needs_tools(text: str) -> bool:
+    words = set(text.lower().split())
+    return bool(words & (NOTION_KEYWORDS | GMAIL_KEYWORDS))
+
+
+async def run_claude(prompt: str, chat_id: int) -> str:
     history = conversations.get(chat_id, [])
+    # Historique limité aux 6 derniers échanges
     context = ""
-    for msg in history[-10:]:
+    for msg in history[-6:]:
         role = "Human" if msg["role"] == "user" else "Assistant"
         context += f"\n\n{role}: {msg['content']}"
-    full_prompt = (f"{SYSTEM_PROMPT}\n\n" + context + f"\n\nHuman: {prompt}\n\nAssistant:").strip()
+    full_prompt = (context + f"\n\nHuman: {prompt}\n\nAssistant:").strip() if context else prompt
 
-    result = subprocess.run(
-        [
-            "claude", "-p", full_prompt,
-            "--output-format", "text",
-            "--dangerously-skip-permissions",
-            "--mcp-config", "/home/appuser/.claude.json",
-        ],
-        capture_output=True,
-        text=True,
-        timeout=120,
-        env={**os.environ, "HOME": "/home/appuser"}
+    cmd = [
+        "claude", "-p", full_prompt,
+        "--output-format", "text",
+        "--dangerously-skip-permissions",
+        "--system-prompt", SYSTEM_PROMPT,
+    ]
+    # Charger les MCPs seulement si le message en a besoin
+    if needs_tools(prompt):
+        cmd += ["--mcp-config", MCP_CONFIG_PATH]
+        logger.info("MCP enabled for: %r", prompt[:60])
+    else:
+        logger.info("MCP skipped (fast path) for: %r", prompt[:60])
+
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        env={**os.environ, "HOME": HOME}
     )
-    logger.info("claude rc=%d stdout=%r stderr=%r", result.returncode, result.stdout[:300], result.stderr[:300])
-    return result.stdout.strip() or result.stderr.strip() or "Pas de réponse."
+    try:
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
+    except asyncio.TimeoutError:
+        proc.kill()
+        return "Délai d'attente dépassé, réessaie."
+
+    out = stdout.decode().strip()
+    err = stderr.decode().strip()
+    logger.info("claude rc=%d out=%r err=%r", proc.returncode, out[:200], err[:200])
+    return out or err or "Pas de réponse."
 
 
 async def send_message(chat_id: int, text: str):
@@ -133,8 +158,7 @@ async def webhook(request: Request):
         await send_message(chat_id, "Conversation réinitialisée.")
         return {"ok": True}
 
-    loop = asyncio.get_event_loop()
-    response = await loop.run_in_executor(None, run_claude, text, chat_id)
+    response = await run_claude(text, chat_id)
 
     conversations.setdefault(chat_id, [])
     conversations[chat_id].append({"role": "user", "content": text})
