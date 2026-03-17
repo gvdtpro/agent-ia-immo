@@ -4,6 +4,7 @@ import httpx
 from fastapi import FastAPI, Request
 from telegram import Bot, Update
 from config_manager import get_client_config
+from crm_notion import get_vendeurs_a_prospecter, prop
 from claude_client import get_claude_response
 from briefing import build_briefing
 from debrief import start_debrief, is_active, handle_callback, handle_text as debrief_handle_text
@@ -49,24 +50,35 @@ async def webhook(token: str, request: Request):
 
         # ── COMMANDE /prospection ──────────────────────────
         if user_message.strip().lower().startswith('/prospection'):
-            parts = user_message.strip().split()
-            if len(parts) < 2:
-                await bot.send_message(chat_id=chat_id, text="Usage : /prospection 0752051143")
-                return {"ok": True}
-            phone = parts[1]
             wa_url = os.environ.get("WHATSAPP_BOT_URL", "")
             if not wa_url:
                 await bot.send_message(chat_id=chat_id, text="❌ WHATSAPP_BOT_URL non configuré.")
                 return {"ok": True}
-            try:
-                async with httpx.AsyncClient(timeout=10) as client:
-                    resp = await client.post(f"{wa_url}/send", json={"phone": phone, "message": "coucou"})
-                if resp.status_code == 200:
-                    await bot.send_message(chat_id=chat_id, text=f"✅ Message envoyé à {phone} sur WhatsApp !")
-                else:
-                    await bot.send_message(chat_id=chat_id, text=f"❌ Erreur : {resp.text}")
-            except Exception as e:
-                await bot.send_message(chat_id=chat_id, text=f"❌ Erreur connexion WhatsApp bot : {e}")
+            await bot.send_chat_action(chat_id=chat_id, action="typing")
+            vendeurs = get_vendeurs_a_prospecter()
+            if not vendeurs:
+                await bot.send_message(chat_id=chat_id, text="Aucun vendeur avec Prospection cochée dans le CRM.")
+                return {"ok": True}
+            envoyes, erreurs = [], []
+            async with httpx.AsyncClient(timeout=10) as client:
+                for v in vendeurs:
+                    nom = prop(v, "Vendeur")
+                    tel = prop(v, "Téléphone")
+                    if tel == "—":
+                        erreurs.append(f"{nom} (pas de téléphone)")
+                        continue
+                    try:
+                        resp = await client.post(f"{wa_url}/send", json={"phone": tel, "message": "coucou"})
+                        if resp.status_code == 200:
+                            envoyes.append(f"{nom} ({tel})")
+                        else:
+                            erreurs.append(f"{nom} — erreur {resp.status_code}")
+                    except Exception as e:
+                        erreurs.append(f"{nom} — {e}")
+            rapport = f"✅ Envoyés ({len(envoyes)}) :\n" + "\n".join(envoyes) if envoyes else "Aucun message envoyé."
+            if erreurs:
+                rapport += f"\n\n❌ Erreurs :\n" + "\n".join(erreurs)
+            await bot.send_message(chat_id=chat_id, text=rapport)
             return {"ok": True}
 
         # ── COMMANDE /debrief ───────────────────────────────
