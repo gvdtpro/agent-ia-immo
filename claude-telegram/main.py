@@ -6,7 +6,7 @@ import httpx
 
 app = FastAPI()
 
-TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
+TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN_AGENTIAGAEL"]
 TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 
 # Historique par chat_id (en mémoire, reset au redémarrage)
