@@ -29,8 +29,8 @@ try:
     claude_config = {
         "mcpServers": {
             "notion": {
-                "command": "npx",
-                "args": ["-y", "@notionhq/notion-mcp-server"],
+                "command": "notion-mcp-server",
+                "args": [],
                 "env": {
                     "NOTION_API_KEY": os.environ.get("NOTION_TOKEN", "")
                 }
@@ -94,7 +94,12 @@ def run_claude(prompt: str, chat_id: int) -> str:
     full_prompt = (f"{SYSTEM_PROMPT}\n\n" + context + f"\n\nHuman: {prompt}\n\nAssistant:").strip()
 
     result = subprocess.run(
-        ["claude", "-p", full_prompt, "--output-format", "text"],
+        [
+            "claude", "-p", full_prompt,
+            "--output-format", "text",
+            "--dangerously-skip-permissions",
+            "--mcp-config", "/root/.claude.json",
+        ],
         capture_output=True,
         text=True,
         timeout=120,
