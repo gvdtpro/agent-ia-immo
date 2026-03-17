@@ -50,35 +50,39 @@ async def webhook(token: str, request: Request):
 
         # ── COMMANDE /prospection ──────────────────────────
         if user_message.strip().lower().startswith('/prospection'):
-            wa_url = os.environ.get("WHATSAPP_BOT_URL", "")
-            if not wa_url:
-                await bot.send_message(chat_id=chat_id, text="❌ WHATSAPP_BOT_URL non configuré.")
-                return {"ok": True}
-            await bot.send_chat_action(chat_id=chat_id, action="typing")
-            vendeurs = get_vendeurs_a_prospecter()
-            if not vendeurs:
-                await bot.send_message(chat_id=chat_id, text="Aucun vendeur avec Prospection cochée dans le CRM.")
-                return {"ok": True}
-            envoyes, erreurs = [], []
-            async with httpx.AsyncClient(timeout=10) as client:
-                for v in vendeurs:
-                    nom = prop(v, "Vendeur")
-                    tel = prop(v, "Téléphone")
-                    if tel == "—":
-                        erreurs.append(f"{nom} (pas de téléphone)")
-                        continue
-                    try:
-                        resp = await client.post(f"{wa_url}/send", json={"phone": tel, "message": "coucou"})
-                        if resp.status_code == 200:
-                            envoyes.append(f"{nom} ({tel})")
-                        else:
-                            erreurs.append(f"{nom} — erreur {resp.status_code}")
-                    except Exception as e:
-                        erreurs.append(f"{nom} — {e}")
-            rapport = f"✅ Envoyés ({len(envoyes)}) :\n" + "\n".join(envoyes) if envoyes else "Aucun message envoyé."
-            if erreurs:
-                rapport += f"\n\n❌ Erreurs :\n" + "\n".join(erreurs)
-            await bot.send_message(chat_id=chat_id, text=rapport)
+            try:
+                wa_url = os.environ.get("WHATSAPP_BOT_URL", "")
+                if not wa_url:
+                    await bot.send_message(chat_id=chat_id, text="❌ WHATSAPP_BOT_URL non configuré.")
+                    return {"ok": True}
+                await bot.send_chat_action(chat_id=chat_id, action="typing")
+                vendeurs = get_vendeurs_a_prospecter()
+                if not vendeurs:
+                    await bot.send_message(chat_id=chat_id, text="Aucun vendeur avec Prospection cochée dans le CRM.")
+                    return {"ok": True}
+                envoyes, erreurs = [], []
+                async with httpx.AsyncClient(timeout=10) as client:
+                    for v in vendeurs:
+                        nom = prop(v, "Vendeur")
+                        tel = prop(v, "Téléphone")
+                        if tel == "—":
+                            erreurs.append(f"{nom} (pas de téléphone)")
+                            continue
+                        try:
+                            resp = await client.post(f"{wa_url}/send", json={"phone": tel, "message": "coucou"})
+                            if resp.status_code == 200:
+                                envoyes.append(f"{nom} ({tel})")
+                            else:
+                                erreurs.append(f"{nom} — erreur {resp.status_code}")
+                        except Exception as e:
+                            erreurs.append(f"{nom} — {e}")
+                rapport = f"✅ Envoyés ({len(envoyes)}) :\n" + "\n".join(envoyes) if envoyes else "Aucun message envoyé."
+                if erreurs:
+                    rapport += f"\n\n❌ Erreurs :\n" + "\n".join(erreurs)
+                await bot.send_message(chat_id=chat_id, text=rapport)
+            except Exception as e:
+                logger.error(f"Erreur prospection: {e}")
+                await bot.send_message(chat_id=chat_id, text=f"❌ Erreur prospection : {e}")
             return {"ok": True}
 
         # ── COMMANDE /debrief ───────────────────────────────
