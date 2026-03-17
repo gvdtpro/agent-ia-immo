@@ -201,9 +201,10 @@ async def setup_webhook(token: str, request: Request):
     bot = Bot(token=token)
     await bot.set_webhook(url=webhook_url)
     await bot.set_my_commands([
-        ("journee",      "📋 Briefing du jour"),
-        ("debrief",      "🌙 Debrief & mise à jour CRM"),
-        ("prospection",  "📱 Envoyer un WhatsApp — /prospection 0612345678"),
+        ("journee",         "📋 Briefing du jour"),
+        ("debrief",         "🌙 Debrief & mise à jour CRM"),
+        ("prospection",     "📱 Prospection WhatsApp"),
+        ("prospection_ig",  "📸 Prospection Instagram"),
     ])
     return {"status": "webhook enregistré", "url": webhook_url}
 
