@@ -95,6 +95,15 @@ def update_acheteur(page_id: str, statut: str = None, notes: str = None, prochai
         get_notion().pages.update(page_id=page_id, properties=props)
 
 
+def get_vendeurs_a_prospecter_ig() -> list:
+    """Vendeurs avec la case Prospection IG cochée."""
+    res = get_notion().databases.query(
+        database_id=VENDEURS_DB,
+        filter={"property": "Prospection IG", "checkbox": {"equals": True}}
+    )
+    return res["results"]
+
+
 def get_vendeurs_a_prospecter() -> list:
     """Vendeurs avec la case Prospection cochée."""
     res = get_notion().databases.query(

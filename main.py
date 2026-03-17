@@ -4,7 +4,7 @@ import httpx
 from fastapi import FastAPI, Request
 from telegram import Bot, Update
 from config_manager import get_client_config
-from crm_notion import get_vendeurs_a_prospecter, prop
+from crm_notion import get_vendeurs_a_prospecter, get_vendeurs_a_prospecter_ig, prop
 from claude_client import get_claude_response
 from briefing import build_briefing
 from debrief import start_debrief, is_active, handle_callback, handle_text as debrief_handle_text
@@ -83,6 +83,44 @@ async def webhook(token: str, request: Request):
             except Exception as e:
                 logger.error(f"Erreur prospection: {e}")
                 await bot.send_message(chat_id=chat_id, text=f"❌ Erreur prospection : {e}")
+            return {"ok": True}
+
+        # ── COMMANDE /prospection_ig ───────────────────────
+        if user_message.strip().lower().startswith('/prospection_ig'):
+            try:
+                ig_url = os.environ.get("INSTAGRAM_BOT_URL", "")
+                if not ig_url:
+                    await bot.send_message(chat_id=chat_id, text="❌ INSTAGRAM_BOT_URL non configuré.")
+                    return {"ok": True}
+                await bot.send_chat_action(chat_id=chat_id, action="typing")
+                vendeurs = get_vendeurs_a_prospecter_ig()
+                if not vendeurs:
+                    await bot.send_message(chat_id=chat_id, text="Aucun vendeur avec Prospection IG cochée dans le CRM.")
+                    return {"ok": True}
+                envoyes, erreurs = [], []
+                async with httpx.AsyncClient(timeout=10) as client:
+                    for v in vendeurs:
+                        nom = prop(v, "Vendeur")
+                        pseudo = prop(v, "Instagram")
+                        if pseudo == "—":
+                            erreurs.append(f"{nom} (pas de pseudo Instagram)")
+                            continue
+                        pseudo = pseudo.lstrip("@")
+                        try:
+                            resp = await client.post(f"{ig_url}/send", json={"username": pseudo, "message": "coucou"})
+                            if resp.status_code == 200:
+                                envoyes.append(f"{nom} (@{pseudo})")
+                            else:
+                                erreurs.append(f"{nom} — erreur {resp.status_code}")
+                        except Exception as e:
+                            erreurs.append(f"{nom} — {e}")
+                rapport = f"✅ Envoyés ({len(envoyes)}) :\n" + "\n".join(envoyes) if envoyes else "Aucun message envoyé."
+                if erreurs:
+                    rapport += f"\n\n❌ Erreurs :\n" + "\n".join(erreurs)
+                await bot.send_message(chat_id=chat_id, text=rapport)
+            except Exception as e:
+                logger.error(f"Erreur prospection_ig: {e}")
+                await bot.send_message(chat_id=chat_id, text=f"❌ Erreur prospection IG : {e}")
             return {"ok": True}
 
         # ── COMMANDE /debrief ───────────────────────────────
