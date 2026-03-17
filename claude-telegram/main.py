@@ -21,11 +21,36 @@ try:
     with open("/root/.claude/.credentials.json", "w") as f:
         f.write(creds_raw)
     logger.info("Credentials written OK (%d bytes)", len(creds_raw))
-    # Vérifier que le fichier est lisible par claude
-    parsed = json.loads(creds_raw)
-    logger.info("Token type: %s", list(parsed.keys()))
 except Exception as e:
     logger.error("Failed to write credentials: %s", e)
+
+# Écrire la config MCP Claude Code (~/.claude.json)
+try:
+    claude_config = {
+        "mcpServers": {
+            "notion": {
+                "command": "npx",
+                "args": ["-y", "@notionhq/notion-mcp-server"],
+                "env": {
+                    "NOTION_API_KEY": os.environ.get("NOTION_TOKEN", "")
+                }
+            },
+            "gmail": {
+                "command": "python3",
+                "args": ["/app/gmail_mcp.py"],
+                "env": {
+                    "GMAIL_CLIENT_ID": os.environ.get("GMAIL_CLIENT_ID", ""),
+                    "GMAIL_CLIENT_SECRET": os.environ.get("GMAIL_CLIENT_SECRET", ""),
+                    "GMAIL_REFRESH_TOKEN": os.environ.get("GMAIL_REFRESH_TOKEN", "")
+                }
+            }
+        }
+    }
+    with open("/root/.claude.json", "w") as f:
+        json.dump(claude_config, f)
+    logger.info("Claude MCP config written OK")
+except Exception as e:
+    logger.error("Failed to write MCP config: %s", e)
 
 # Historique par chat_id
 conversations: dict[int, list[dict]] = {}
