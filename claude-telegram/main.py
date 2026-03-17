@@ -2,6 +2,7 @@ import os
 import json
 import asyncio
 import logging
+import subprocess
 from fastapi import FastAPI, Request
 import httpx
 
@@ -13,42 +14,40 @@ app = FastAPI()
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN_AGENTIAGAEL"]
 TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 
-# Extraire le token OAuth depuis CLAUDE_CREDENTIALS
+# Écrire les credentials Claude.ai au démarrage
 creds_raw = os.environ.get("CLAUDE_CREDENTIALS", "{}")
-creds = json.loads(creds_raw)
-OAUTH_TOKEN = creds.get("claudeAiOauth", {}).get("accessToken", "")
-if OAUTH_TOKEN:
-    logger.info("OAuth token loaded OK")
-else:
-    logger.warning("OAuth token not found in CLAUDE_CREDENTIALS")
+try:
+    os.makedirs("/root/.claude", exist_ok=True)
+    with open("/root/.claude/.credentials.json", "w") as f:
+        f.write(creds_raw)
+    logger.info("Credentials written OK (%d bytes)", len(creds_raw))
+    # Vérifier que le fichier est lisible par claude
+    parsed = json.loads(creds_raw)
+    logger.info("Token type: %s", list(parsed.keys()))
+except Exception as e:
+    logger.error("Failed to write credentials: %s", e)
 
 # Historique par chat_id
 conversations: dict[int, list[dict]] = {}
 
 
-async def call_claude(prompt: str, history: list[dict]) -> str:
-    messages = history[-20:] + [{"role": "user", "content": prompt}]
-    async with httpx.AsyncClient(timeout=120) as client:
-        r = await client.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "Authorization": f"Bearer {OAUTH_TOKEN}",
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
-            json={
-                "model": "claude-sonnet-4-6",
-                "max_tokens": 4096,
-                "messages": messages,
-            }
-        )
-        data = r.json()
-        logger.info("API response status=%d", r.status_code)
-        if r.status_code == 200:
-            return data["content"][0]["text"]
-        else:
-            logger.error("API error: %s", data)
-            return f"Erreur API: {data.get('error', {}).get('message', str(data))}"
+def run_claude(prompt: str, chat_id: int) -> str:
+    history = conversations.get(chat_id, [])
+    context = ""
+    for msg in history[-10:]:
+        role = "Human" if msg["role"] == "user" else "Assistant"
+        context += f"\n\n{role}: {msg['content']}"
+    full_prompt = (context + f"\n\nHuman: {prompt}\n\nAssistant:").strip() if context else prompt
+
+    result = subprocess.run(
+        ["claude", "-p", full_prompt, "--output-format", "text"],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        env={**os.environ, "HOME": "/root"}
+    )
+    logger.info("claude rc=%d stdout=%r stderr=%r", result.returncode, result.stdout[:300], result.stderr[:300])
+    return result.stdout.strip() or result.stderr.strip() or "Pas de réponse."
 
 
 async def send_message(chat_id: int, text: str):
@@ -75,8 +74,8 @@ async def webhook(request: Request):
         await send_message(chat_id, "Conversation réinitialisée.")
         return {"ok": True}
 
-    history = conversations.get(chat_id, [])
-    response = await call_claude(text, history)
+    loop = asyncio.get_event_loop()
+    response = await loop.run_in_executor(None, run_claude, text, chat_id)
 
     conversations.setdefault(chat_id, [])
     conversations[chat_id].append({"role": "user", "content": text})
