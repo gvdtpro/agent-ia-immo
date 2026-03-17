@@ -54,6 +54,9 @@ except Exception as e:
 # Historique par chat_id
 conversations: dict[int, list[dict]] = {}
 
+# Déduplication : message_ids déjà traités
+processed_ids: set[int] = set()
+
 SYSTEM_PROMPT = """Tu es Alex, l'assistant IA personnel de [NOM AGENT], agent immobilier.
 
 Tu as accès aux outils suivants et tu les utilises de façon autonome quand c'est pertinent :
@@ -143,28 +146,40 @@ async def send_message(chat_id: int, text: str):
             })
 
 
+async def process_message(chat_id: int, text: str):
+    response = await run_claude(text, chat_id)
+    conversations.setdefault(chat_id, [])
+    conversations[chat_id].append({"role": "user", "content": text})
+    conversations[chat_id].append({"role": "assistant", "content": response})
+    await send_message(chat_id, response)
+
+
 @app.post("/webhook")
 async def webhook(request: Request):
     data = await request.json()
     message = data.get("message", {})
     chat_id = message.get("chat", {}).get("id")
     text = message.get("text", "")
+    message_id = message.get("message_id")
 
     if not text or not chat_id:
         return {"ok": True}
+
+    # Déduplication — Telegram retry si réponse trop lente
+    if message_id in processed_ids:
+        logger.info("Duplicate message_id=%d ignored", message_id)
+        return {"ok": True}
+    processed_ids.add(message_id)
+    if len(processed_ids) > 1000:
+        processed_ids.clear()
 
     if text == "/reset":
         conversations.pop(chat_id, None)
         await send_message(chat_id, "Conversation réinitialisée.")
         return {"ok": True}
 
-    response = await run_claude(text, chat_id)
-
-    conversations.setdefault(chat_id, [])
-    conversations[chat_id].append({"role": "user", "content": text})
-    conversations[chat_id].append({"role": "assistant", "content": response})
-
-    await send_message(chat_id, response)
+    # Traitement en arrière-plan — retourne 200 immédiatement à Telegram
+    asyncio.create_task(process_message(chat_id, text))
     return {"ok": True}
 
 
