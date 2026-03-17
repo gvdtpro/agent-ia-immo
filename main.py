@@ -1,5 +1,6 @@
 import os
 import logging
+import httpx
 from fastapi import FastAPI, Request
 from telegram import Bot, Update
 from config_manager import get_client_config
@@ -45,6 +46,28 @@ async def webhook(token: str, request: Request):
         user_name = update.message.from_user.first_name or "le prospect"
 
         logger.info(f"[{token[:10]}...] Message de {user_name}: {user_message[:50]}")
+
+        # ── COMMANDE /prospection ──────────────────────────
+        if user_message.strip().lower().startswith('/prospection'):
+            parts = user_message.strip().split()
+            if len(parts) < 2:
+                await bot.send_message(chat_id=chat_id, text="Usage : /prospection 0752051143")
+                return {"ok": True}
+            phone = parts[1]
+            wa_url = os.environ.get("WHATSAPP_BOT_URL", "")
+            if not wa_url:
+                await bot.send_message(chat_id=chat_id, text="❌ WHATSAPP_BOT_URL non configuré.")
+                return {"ok": True}
+            try:
+                async with httpx.AsyncClient(timeout=10) as client:
+                    resp = await client.post(f"{wa_url}/send", json={"phone": phone, "message": "coucou"})
+                if resp.status_code == 200:
+                    await bot.send_message(chat_id=chat_id, text=f"✅ Message envoyé à {phone} sur WhatsApp !")
+                else:
+                    await bot.send_message(chat_id=chat_id, text=f"❌ Erreur : {resp.text}")
+            except Exception as e:
+                await bot.send_message(chat_id=chat_id, text=f"❌ Erreur connexion WhatsApp bot : {e}")
+            return {"ok": True}
 
         # ── COMMANDE /debrief ───────────────────────────────
         if user_message.strip().lower() == "/debrief":
