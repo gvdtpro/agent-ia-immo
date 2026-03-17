@@ -49,7 +49,7 @@ async def webhook(token: str, request: Request):
         logger.info(f"[{token[:10]}...] Message de {user_name}: {user_message[:50]}")
 
         # ── COMMANDE /prospection ──────────────────────────
-        if user_message.strip().lower().startswith('/prospection'):
+        if user_message.strip().lower().startswith('/prospection') and not user_message.strip().lower().startswith('/prospection_ig'):
             try:
                 wa_url = os.environ.get("WHATSAPP_BOT_URL", "")
                 if not wa_url:
