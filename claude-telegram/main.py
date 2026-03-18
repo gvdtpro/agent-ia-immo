@@ -199,8 +199,12 @@ async def send_message(chat_id: int, text: str) -> int | None:
 
 
 async def process_message(chat_id: int, text: str):
-    # Envoyer "⏳" immédiatement — l'utilisateur voit que ça travaille
-    thinking_id = await send_message(chat_id, "⏳ Analyse en cours...")
+    use_tools = needs_tools(text)
+
+    # Indicateur de réflexion uniquement si outils nécessaires
+    thinking_id = None
+    if use_tools:
+        thinking_id = await send_message(chat_id, "Je réfléchis afin de vous donner la meilleure réponse possible...")
 
     response = await run_claude(text, chat_id)
 
@@ -208,7 +212,6 @@ async def process_message(chat_id: int, text: str):
     conversations[chat_id].append({"role": "user", "content": text})
     conversations[chat_id].append({"role": "assistant", "content": response})
 
-    # Éditer le message "⏳" avec la vraie réponse
     if thinking_id:
         await edit_message(chat_id, thinking_id, response)
     else:
