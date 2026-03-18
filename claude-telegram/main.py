@@ -4,28 +4,72 @@ import asyncio
 import logging
 import time
 from fastapi import FastAPI, Request
+from contextlib import asynccontextmanager
 import httpx
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI()
-
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN_AGENTIAGAEL"]
 TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 HOME = "/home/appuser"
 MCP_CONFIG_PATH = f"{HOME}/.claude.json"
-NOTION_CACHE_TTL = 300  # 5 minutes
+CREDS_PATH = f"{HOME}/.claude/.credentials.json"
+NOTION_CACHE_TTL = 300
+OAUTH_TOKEN_URL = "https://platform.claude.com/v1/oauth/token"
+OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 
-# Écrire les credentials Claude.ai au démarrage
-creds_raw = os.environ.get("CLAUDE_CREDENTIALS", "{}")
-try:
-    os.makedirs(f"{HOME}/.claude", exist_ok=True)
-    with open(f"{HOME}/.claude/.credentials.json", "w") as f:
-        f.write(creds_raw)
-    logger.info("Credentials written OK (%d bytes)", len(creds_raw))
-except Exception as e:
-    logger.error("Failed to write credentials: %s", e)
+os.makedirs(f"{HOME}/.claude", exist_ok=True)
+
+def write_credentials(creds: dict):
+    with open(CREDS_PATH, "w") as f:
+        json.dump(creds, f)
+    logger.info("Credentials written OK")
+
+async def refresh_token(creds: dict) -> dict:
+    refresh_tok = creds.get("claudeAiOauth", {}).get("refreshToken", "")
+    if not refresh_tok:
+        return creds
+    async with httpx.AsyncClient() as client:
+        r = await client.post(OAUTH_TOKEN_URL, json={
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_tok,
+            "client_id": OAUTH_CLIENT_ID
+        }, timeout=15)
+    if r.status_code == 200:
+        data = r.json()
+        creds["claudeAiOauth"]["accessToken"] = data["access_token"]
+        if "refresh_token" in data:
+            creds["claudeAiOauth"]["refreshToken"] = data["refresh_token"]
+        logger.info("OAuth token refreshed OK")
+    else:
+        logger.error("Token refresh failed: %d %s", r.status_code, r.text[:100])
+    return creds
+
+async def token_refresh_loop():
+    while True:
+        await asyncio.sleep(7 * 3600)  # toutes les 7h (expire en 8h)
+        try:
+            with open(CREDS_PATH) as f:
+                creds = json.load(f)
+            creds = await refresh_token(creds)
+            write_credentials(creds)
+        except Exception as e:
+            logger.error("Token refresh loop error: %s", e)
+
+@asynccontextmanager
+async def lifespan(app):
+    # Écrire + rafraîchir le token au démarrage
+    try:
+        creds = json.loads(os.environ.get("CLAUDE_CREDENTIALS", "{}"))
+        creds = await refresh_token(creds)
+        write_credentials(creds)
+    except Exception as e:
+        logger.error("Startup credentials error: %s", e)
+    asyncio.create_task(token_refresh_loop())
+    yield
+
+app = FastAPI(lifespan=lifespan)
 
 # Écrire la config MCP Claude Code
 try:
